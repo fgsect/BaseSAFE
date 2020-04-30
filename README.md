@@ -18,5 +18,5 @@ cargo run data/pcch.raw
 The emulated code can then be fuzzed with [AFL++](https://github.com/AFLplusplus/AFLplusplus) in Unicorn mode:
 ```
 cargo build --release
-path/to/AFLplusplus/afl-fuzz -i in/ -o out/ -m none -- target/release/emm_fuzz @@
+path/to/AFLplusplus/afl-fuzz -i in/ -o out/ -m none -- target/release/errc_fuzz @@
 ```
