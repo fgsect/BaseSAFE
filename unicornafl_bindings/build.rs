@@ -1,7 +1,5 @@
 use std::{
     env,
-    ffi::{OsStr, OsString},
-    path::{Path, PathBuf},
     process::Command,
 };
 
@@ -12,7 +10,7 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let unicorn = "libunicornafl.a";
         let _ = Command::new("cp")
-            .current_dir("../../AFLplusplus/unicorn_mode/unicornafl")
+            .current_dir("../AFLplusplus/unicorn_mode/unicornafl")
             .arg(&unicorn)
             .arg(&out_dir)
             .status()
