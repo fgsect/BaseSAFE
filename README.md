@@ -8,7 +8,7 @@ The _example/_ directory contains two harnesses emulating parts of the firmware 
 
 ## Setup
 
-Please set the path to your unicornAFL installation inside _unicornafl_bindings/build.rs_.
+```Make``` AFL++ and build _AFLplusplus/unicorn_mode_.
 
 A single emulation run can be started by navigating into e.g.
 _examples/errc_ and calling
@@ -16,8 +16,9 @@ _examples/errc_ and calling
 cargo run data/pcch.raw
 ```
 
-The emulated code can then be fuzzed with [AFL++](https://github.com/AFLplusplus/AFLplusplus) in Unicorn mode:
+The emulated code can be fuzzed with [AFL++](https://github.com/AFLplusplus/AFLplusplus) in Unicorn mode:
 ```
+cd examples/errc
 cargo build --release
-path/to/AFLplusplus/afl-fuzz -i in/ -o out/ -m none -- target/release/errc_fuzz @@
+../../AFLplusplus/afl-fuzz -i in/ -o out/ -m none -- target/release/errc_fuzz @@
 ```
