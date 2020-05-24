@@ -8,6 +8,8 @@ The _example/_ directory contains two harnesses emulating parts of the firmware 
 `_EMM_` demonstrates a crash inside the decoder for `ATTACH`/`ACCEPT` messages as part of the Mobility Management.
 `_ERRC_` emulates various ASN.1 decoders which are being used for Radio Resource Control messages. Example inputs can be found inside the `_data/_` directories.
 
+<br/>
+
 ## Setup
 
 ```Make``` AFL++ and build _AFLplusplus/unicorn_mode_.
