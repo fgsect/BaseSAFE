@@ -1,5 +1,7 @@
 # BaseSAFE
 
+<a href="https://arxiv.org/pdf/2005.07797.pdf"> <img title="" src="paper.png" alt="base safe paper" align="right" width="200"></a>
+
 This repository contains the BaseSAFE Rust APIs, introduced by "BaseSAFE: Baseband SAnitized Fuzzing through Emulation".
 
 The _example/_ directory contains two harnesses emulating parts of the firmware for MediaTek’s Helio X10 (MT6795) baseband processor.
