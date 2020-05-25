@@ -12,11 +12,15 @@ The _example/_ directory contains two harnesses emulating parts of the firmware 
 
 ## Setup
 
-```Make``` AFL++ and build _AFLplusplus/unicorn_mode_.
+Make AFL++ and build _AFLplusplus/unicorn_mode_.
+```
+./build_afl.sh
+```
 
 A single emulation run can be started by navigating into e.g.
-_examples/errc_ and calling
+_examples/errc_ and executing the harness on the provided data:
 ```
+cd examples/errc/
 cargo run data/pcch.raw
 ```
 
