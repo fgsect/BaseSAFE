@@ -28,5 +28,5 @@ The emulated code can be fuzzed with [AFL++](https://github.com/AFLplusplus/AFLp
 ```
 cd examples/errc
 cargo build --release
-../../AFLplusplus/afl-fuzz -i in/ -o out/ -m none -- target/release/errc_fuzz @@
+../../AFLplusplus/afl-fuzz -U -i connections/ -o out/ -m none -- target/release/errc_fuzz @@
 ```
