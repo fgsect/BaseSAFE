@@ -9,10 +9,11 @@ use std::cell::RefCell;
 
 #[cfg(debug_assertions)] use capstone::prelude::*;
 use libc::{munmap, c_void};
-use unicornafl::ffi::{Protection, HookType};
-use unicornafl::arm::Register;
-use unicornafl::utils::*;
-
+use unicornafl::{
+    unicorn_const::{uc_error, Permission, HookType, Arch},
+    RegisterARM,
+    utils::*,
+};
 
 type Unicorn<'a> = unicornafl::UnicornHandle<'a, RefCell<Heap>>;
 
@@ -64,24 +65,24 @@ fn main() {
     
     let aligned_size = align(modem_len);
     
-    let mut unicorn = init_emu_with_heap(1048576*20, 0x90000000, false).expect("failed to create emulator instance");
+    let mut unicorn = init_emu_with_heap(Arch::ARM, 1048576*20, 0x90000000, false).expect("failed to create emulator instance");
     let mut emu = unicorn.borrow();
 
-    emu.mem_map(0x0A000000, 0x1000000, Protection::READ | Protection::WRITE).expect("failed to map input buffer");
+    emu.mem_map(0x0A000000, 0x1000000, Permission::READ | Permission::WRITE).expect("failed to map input buffer");
     
     const STACK_SIZE: u32 = 0x1000 * 16;
     const STACK_ADDR: u32 = 0x7f000000;                        
-    emu.mem_map((STACK_ADDR - STACK_SIZE) as u64, STACK_SIZE as usize, Protection::READ | Protection::WRITE).expect("map stack failed");
-    emu.reg_write(Register::SP as i32, STACK_ADDR as u64).expect("failed write SP"); 
+    emu.mem_map((STACK_ADDR - STACK_SIZE) as u64, STACK_SIZE as usize, Permission::READ | Permission::WRITE).expect("map stack failed");
+    emu.reg_write(RegisterARM::SP as i32, STACK_ADDR as u64).expect("failed write SP"); 
 
     #[cfg(debug_assertions)]
     println!("Mapping {:#x} bytes (pagesize {:#x}) at addr {:#x}", modem_len, aligned_size, BASE_ADDR);
-    emu.mem_map(BASE_ADDR, aligned_size as usize, Protection::READ | Protection::EXEC).expect("failed to map EXEC pages");
+    emu.mem_map(BASE_ADDR, aligned_size as usize, Permission::READ | Permission::EXEC).expect("failed to map EXEC pages");
     emu.mem_write(BASE_ADDR, &modem_image).expect("failed to write image");
     
-    emu.mem_map(0x70055400 as u64, 1024 as usize, Protection::READ | Protection::WRITE).expect("failed to map DAT_70055500");
-    emu.mem_map(0xF5F7F800 as u64, 2048 as usize, Protection::READ | Protection::WRITE).expect("failed to map main_function_tbl");
-    emu.mem_map(0xF731C800 as u64, 2048 as usize, Protection::READ | Protection::WRITE).expect("failed to map ASN_BLOCK_FREE_NUM");
+    emu.mem_map(0x70055400 as u64, 1024 as usize, Permission::READ | Permission::WRITE).expect("failed to map DAT_70055500");
+    emu.mem_map(0xF5F7F800 as u64, 2048 as usize, Permission::READ | Permission::WRITE).expect("failed to map main_function_tbl");
+    emu.mem_map(0xF731C800 as u64, 2048 as usize, Permission::READ | Permission::WRITE).expect("failed to map ASN_BLOCK_FREE_NUM");
     emu.mem_write(0xF731CDF4, b"\x01\x00\x00\x01").expect("failed to write ASN_BLOCK_FREE_NUM");
     
     /*
@@ -97,10 +98,10 @@ fn main() {
         let buf_len = u16::from_le_bytes(buf_len_raw) - 1;
         if buf_len < 4 || buf_len == 65535 {
             // return KAL_FALSE  
-            uc.reg_write(Register::R0 as i32, 0).expect("failed to write return val inside msg_recv_*q");
+            uc.reg_write(RegisterARM::R0 as i32, 0).expect("failed to write return val inside msg_recv_*q");
         } else {
             // populate Inter Layer Message struct (on stack)
-            let ilm_ptr = uc.reg_read(Register::R0 as i32).expect("failed to read r0");
+            let ilm_ptr = uc.reg_read(RegisterARM::R0 as i32).expect("failed to read r0");
             uc.mem_write(ilm_ptr, b"\x00\x01").expect("failed to write src_mod_id inside msg_recv_*q");
             uc.mem_write(ilm_ptr + 2, b"\x01\x00").expect("failed to write dest_mod_id inside msg_recv_*q"); 
             uc.mem_write(ilm_ptr + 4, b"\x00\x00").expect("failed to write sap_id inside msg_recv_*q");
@@ -173,48 +174,48 @@ fn main() {
             if msg_id != 255 {
                 // return KAL_TRUE  
                 uc.mem_write(ilm_ptr + 6, &(msg_id as u16).to_le_bytes()).expect("failed to write msg_id inside msg_recv_*q");
-                uc.reg_write(Register::R0 as i32, 1).expect("failed to write return val inside msg_recv_*q");
+                uc.reg_write(RegisterARM::R0 as i32, 1).expect("failed to write return val inside msg_recv_*q");
             } else {
-                uc.reg_write(Register::R0 as i32, 0).expect("failed to write return val inside msg_recv_*q");
+                uc.reg_write(RegisterARM::R0 as i32, 0).expect("failed to write return val inside msg_recv_*q");
             }
         }
     
-        let lr = uc.reg_read(Register::LR as i32).expect("failed to read LR");
-        uc.reg_write(Register::PC as i32, lr).expect("failed to write pc inside msg_recv_*q");
+        let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
+        uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside msg_recv_*q");
     };
 
     let errc_evth_dump_reserve_queue = move |mut uc: Unicorn, _addr: u64, _size: u32| {
         #[cfg(debug_assertions)]
         println!("[*] errc_evth_dump_reserve_queue\n");
-        uc.reg_write(Register::PC as i32, BASE_ADDR + 0x001fe313).expect("failed to write pc inside errc_evth_dump_reserve_queue");
+        uc.reg_write(RegisterARM::PC as i32, BASE_ADDR + 0x001fe313).expect("failed to write pc inside errc_evth_dump_reserve_queue");
     };
 
     let pass_func = move |mut uc: Unicorn, _addr: u64, _size: u32| {
-        let lr = uc.reg_read(Register::LR as i32).expect("failed to read LR");
-        uc.reg_write(Register::PC as i32, lr).expect("failed to write pc inside pass_func");
+        let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
+        uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside pass_func");
     };
 
     let kal_get_buffer = |mut uc: Unicorn, _addr: u64, _size: u32| {
-        let size = uc.reg_read(Register::R2 as i32).expect("failed to read r2");
+        let size = uc.reg_read(RegisterARM::R2 as i32).expect("failed to read r2");
         let ptr = uc_alloc(&mut uc, size).expect("failed to alloc");
         
-        uc.reg_write(Register::R0 as i32, ptr).expect("failed to write new_buf_ptr to r0 inside kal_get_buffer");
-        let lr = uc.reg_read(Register::LR as i32).expect("failed to read LR");
-        uc.reg_write(Register::PC as i32, lr).expect("failed to write pc inside kal_get_buffer");
+        uc.reg_write(RegisterARM::R0 as i32, ptr).expect("failed to write new_buf_ptr to r0 inside kal_get_buffer");
+        let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
+        uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside kal_get_buffer");
     };
     
     let kal_release_buffer = |mut uc: Unicorn, _addr: u64, _size: u32| {
-        let usr_buf = uc.reg_read(Register::R0 as i32).expect("failed to read r0");
+        let usr_buf = uc.reg_read(RegisterARM::R0 as i32).expect("failed to read r0");
         uc_free(&mut uc, usr_buf).expect("failed to free");
 
-        let lr = uc.reg_read(Register::LR as i32).expect("failed to read LR");
-        uc.reg_write(Register::PC as i32, lr).expect("failed to write pc inside kal_release_buffer");
+        let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
+        uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside kal_release_buffer");
     };
 
     let memset = move |mut uc: Unicorn, _addr: u64, _size: u32| {
-        let s_ptr = uc.reg_read(Register::R0 as i32).expect("failed to read r0");
-        let c = uc.reg_read_i32(Register::R1 as i32).expect("failed to read r1");
-        let n = uc.reg_read(Register::R2 as i32).expect("failed to read r2");
+        let s_ptr = uc.reg_read(RegisterARM::R0 as i32).expect("failed to read r0");
+        let c = uc.reg_read_i32(RegisterARM::R1 as i32).expect("failed to read r1");
+        let n = uc.reg_read(RegisterARM::R2 as i32).expect("failed to read r2");
         let byte = c.to_be_bytes()[3];
         #[cfg(debug_assertions)]
         println!("[*] memset: addr {:#x}, val {}, len {}\n", s_ptr, byte, n);
@@ -222,14 +223,14 @@ fn main() {
         let mut buf = vec![byte; n as usize];
         uc.mem_write(s_ptr, &mut buf).expect("failed to write inside memset");
 
-        let lr = uc.reg_read(Register::LR as i32).expect("failed to read LR");
-        uc.reg_write(Register::PC as i32, lr).expect("failed to write pc inside memset");
+        let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
+        uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside memset");
     };
 
     let memcpy = move |mut uc: Unicorn, _addr: u64, _size: u32| {
-        let dest = uc.reg_read(Register::R0 as i32).expect("failed to read r0");
-        let src = uc.reg_read(Register::R1 as i32).expect("failed to read r1");
-        let len = uc.reg_read(Register::R2 as i32).expect("failed to read r2");
+        let dest = uc.reg_read(RegisterARM::R0 as i32).expect("failed to read r0");
+        let src = uc.reg_read(RegisterARM::R1 as i32).expect("failed to read r1");
+        let len = uc.reg_read(RegisterARM::R2 as i32).expect("failed to read r2");
         #[cfg(debug_assertions)]
         println!("[*] memcpy: dest {:#x}, src {:#x}, len {}\n", dest, src, len);
         
@@ -237,12 +238,12 @@ fn main() {
         uc.mem_read(src, &mut buf).expect("failed to read from src in memcpy");
         uc.mem_write(dest, &mut buf).expect("failed to write to dest in memcpy");
 
-        let lr = uc.reg_read(Register::LR as i32).expect("failed to read LR");
-        uc.reg_write(Register::PC as i32, lr).expect("failed to write pc inside memcpy");
+        let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
+        uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside memcpy");
     };
 
     let free_int_buff = |mut uc: Unicorn, _addr: u64, _size: u32| {
-        let struct_ptr = uc.reg_read(Register::R0 as i32).expect("failed to read r0"); // pdu (protocol data unit) or local_para
+        let struct_ptr = uc.reg_read(RegisterARM::R0 as i32).expect("failed to read r0"); // pdu (protocol data unit) or local_para
         if struct_ptr != 0 {
             let mut ref_count: [u8; 1] = [0];
             uc.mem_read(struct_ptr + 2, &mut ref_count).expect("failed to read struct->ref_count inside free_int_*_buff");
@@ -254,20 +255,20 @@ fn main() {
             }
         }
 
-        let lr = uc.reg_read(Register::LR as i32).expect("failed to read LR");
-        uc.reg_write(Register::PC as i32, lr).expect("failed to write pc inside free_int_*_buff");
+        let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
+        uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside free_int_*_buff");
     };
 
     let free_ctrl_buffer_ext = |mut uc: Unicorn, addr: u64, _size: u32| {
-        let buff_ptr = uc.reg_read(Register::R0 as i32).expect("failed to read r0");
+        let buff_ptr = uc.reg_read(RegisterARM::R0 as i32).expect("failed to read r0");
         
         #[cfg(debug_assertions)]
         {
             if addr == 0x003b7c92 {
-                let file_name_ptr = uc.reg_read(Register::R1 as i32).expect("failed to read r1");
+                let file_name_ptr = uc.reg_read(RegisterARM::R1 as i32).expect("failed to read r1");
                 let mut file_name_buf = vec![0; 64 as usize];
                 uc.mem_read(file_name_ptr, &mut file_name_buf).expect("failed to read file_name in free_ctrl_buffer_ext");
-                let line = uc.reg_read(Register::R2 as i32).expect("failed to read r2");
+                let line = uc.reg_read(RegisterARM::R2 as i32).expect("failed to read r2");
                 unsafe { 
                     let file_name = str_from_u8_nul_utf8_unchecked(&mut file_name_buf);
                     println!("[*] free_ctrl_buffer_ext: addr {}; {}:{}\n", buff_ptr, file_name, line);
@@ -276,19 +277,19 @@ fn main() {
         }
 
         uc_free(&mut uc, buff_ptr).expect("failed to free");
-        let lr = uc.reg_read(Register::LR as i32).expect("failed to read LR");
-        uc.reg_write(Register::PC as i32, lr).expect("failed to write pc inside free_ctrl_buffer_ext");
+        let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
+        uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside free_ctrl_buffer_ext");
     };
 
     let get_int_ctrl_buffer = |mut uc: Unicorn, _addr: u64, _size: u32| {
-        let size = uc.reg_read(Register::R0 as i32).expect("failed to read r0");
-        let file_name_ptr = uc.reg_read(Register::R1 as i32).expect("failed to read r1");
+        let size = uc.reg_read(RegisterARM::R0 as i32).expect("failed to read r0");
+        let file_name_ptr = uc.reg_read(RegisterARM::R1 as i32).expect("failed to read r1");
         
         let mut file_name_buf = vec![0; 64 as usize];
         uc.mem_read(file_name_ptr, &mut file_name_buf).expect("failed to read file_name in get_int_ctrl_buffer");
         #[cfg(debug_assertions)]
         {
-            let line = uc.reg_read(Register::R2 as i32).expect("failed to read r2");
+            let line = uc.reg_read(RegisterARM::R2 as i32).expect("failed to read r2");
             unsafe { 
                 let file_name = str_from_u8_nul_utf8_unchecked(&mut file_name_buf);
                 println!("[*] get_int_ctrl_buffer: size {}; {}:{}\n", size, file_name, line);
@@ -296,24 +297,24 @@ fn main() {
         }
 
         let new_buf_ptr = uc_alloc(&mut uc, size).expect("failed to alloc");
-        uc.reg_write(Register::R0 as i32, new_buf_ptr).expect("failed to write new_buf_ptr to r0 in get_int_ctrl_buffer");
+        uc.reg_write(RegisterARM::R0 as i32, new_buf_ptr).expect("failed to write new_buf_ptr to r0 in get_int_ctrl_buffer");
 
-        let lr = uc.reg_read(Register::LR as i32).expect("failed to read LR");
-        uc.reg_write(Register::PC as i32, lr).expect("failed to write pc inside get_int_ctrl_buffer");
+        let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
+        uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside get_int_ctrl_buffer");
     };
     
     let msg_send = move |mut uc: Unicorn, _addr: u64, _size: u32| {
         #[cfg(debug_assertions)]
         println!("[*] msg_send\n");
-        uc.reg_write(Register::R0 as i32, 1).expect("failed to write ret val inside msg_send");
-        let lr = uc.reg_read(Register::LR as i32).expect("failed to read LR");
-        uc.reg_write(Register::PC as i32, lr).expect("failed to write pc inside msg_send");
+        uc.reg_write(RegisterARM::R0 as i32, 1).expect("failed to write ret val inside msg_send");
+        let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
+        uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside msg_send");
     };
 
     let errc_spv_is_errc_gemini_suspended = move |mut uc: Unicorn, _addr: u64, _size: u32| {
-        uc.reg_write(Register::R0 as i32, 0).expect("failed to write ret val inside is_errc_gemini_suspended");
-        let lr = uc.reg_read(Register::LR as i32).expect("failed to read LR");
-        uc.reg_write(Register::PC as i32, lr).expect("failed to write pc inside is_errc_gemini_suspended");
+        uc.reg_write(RegisterARM::R0 as i32, 0).expect("failed to write ret val inside is_errc_gemini_suspended");
+        let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
+        uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside is_errc_gemini_suspended");
     };
 
     let errc_spv_get_rrc_state = move |mut uc: Unicorn, _addr: u64, _size: u32| {
@@ -327,9 +328,9 @@ fn main() {
         //     RRC_STATE_URA_PCH
         // } rrc_state_enum;
 
-        uc.reg_write(Register::R0 as i32, 1).expect("failed to write ret val inside get_rrc_state");
-        let lr = uc.reg_read(Register::LR as i32).expect("failed to read LR");
-        uc.reg_write(Register::PC as i32, lr).expect("failed to write pc inside get_rrc_state");
+        uc.reg_write(RegisterARM::R0 as i32, 1).expect("failed to write ret val inside get_rrc_state");
+        let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
+        uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside get_rrc_state");
     };
 
     let kal_assert_fail_ext = move |mut uc: Unicorn, _addr: u64, _size: u32| {
@@ -341,9 +342,9 @@ fn main() {
     let kal_fatal_error_handler_int = move |mut uc: Unicorn, _addr: u64, _size: u32| {
         #[cfg(debug_assertions)]
         {
-            let r0 = uc.reg_read(Register::R0 as i32).expect("failed to read r0"); 
-            let r1 = uc.reg_read(Register::R1 as i32).expect("failed to read r1"); 
-            let lr = uc.reg_read(Register::LR as i32).expect("failed to read lr"); 
+            let r0 = uc.reg_read(RegisterARM::R0 as i32).expect("failed to read r0"); 
+            let r1 = uc.reg_read(RegisterARM::R1 as i32).expect("failed to read r1"); 
+            let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read lr"); 
             println!("[*] kal_fatal_error_handler_int:\n[!] FATAL ERROR coming from {:#010x}: error_code {}, os_error_code {}\n", lr, r0, r1);
         }
 
@@ -351,19 +352,19 @@ fn main() {
     };
 
     let destroy_int_ilm = |mut uc: Unicorn, _addr: u64, _size: u32| {
-        let ilm_ptr = uc.reg_read(Register::R0 as i32).expect("failed to read r0");
+        let ilm_ptr = uc.reg_read(RegisterARM::R0 as i32).expect("failed to read r0");
         let mut local_para_ptr: [u8; 4] = [0; 4 as usize];
         uc.mem_read(ilm_ptr + 8, &mut local_para_ptr).expect("failed to read local_para_ptr in destroy_int_ilm");
         let mut peer_buff_ptr: [u8; 4] = [0; 4 as usize];
         uc.mem_read(ilm_ptr + 12, &mut peer_buff_ptr).expect("failed to read peer_buff_ptr in destroy_int_ilm");
         
-        let file_name_ptr = uc.reg_read(Register::R1 as i32).expect("failed to read r1");
+        let file_name_ptr = uc.reg_read(RegisterARM::R1 as i32).expect("failed to read r1");
         let mut file_name_buf = vec![0; 64 as usize];
         uc.mem_read(file_name_ptr, &mut file_name_buf).expect("failed to read file_name in destroy_int_ilm");
         
         #[cfg(debug_assertions)]
         {
-            let line = uc.reg_read(Register::R2 as i32).expect("failed to read r2");
+            let line = uc.reg_read(RegisterARM::R2 as i32).expect("failed to read r2");
             unsafe { 
                 let file_name = str_from_u8_nul_utf8_unchecked(&mut file_name_buf);
                 println!("[*] destroy_int_ilm: ptr {:#010x}; {}:{}\n", ilm_ptr, file_name, line);
@@ -377,30 +378,30 @@ fn main() {
         uc.mem_write(ilm_ptr + 8, &mut null_ptr).expect("failed to null local_para_ptr in destroy_int_ilm");
         uc.mem_write(ilm_ptr + 12, &mut null_ptr).expect("failed to null peer_buff_ptr in destroy_int_ilm");
         
-        let lr = uc.reg_read(Register::LR as i32).expect("failed to read LR");
-        uc.reg_write(Register::PC as i32, lr).expect("failed to write pc inside destroy_int_ilm");
+        let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
+        uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside destroy_int_ilm");
     };
 
     let dhl_trace = |mut uc: Unicorn, _addr: u64, _size: u32| {
         #[cfg(debug_assertions)]
         {
-            let r0 = uc.reg_read(Register::R0 as i32).expect("failed to read r0"); // trc_class
-            let r2 = uc.reg_read(Register::R2 as i32).expect("failed to read r2"); // msg_index
+            let r0 = uc.reg_read(RegisterARM::R0 as i32).expect("failed to read r0"); // trc_class
+            let r2 = uc.reg_read(RegisterARM::R2 as i32).expect("failed to read r2"); // msg_index
             println!("[*] dhl_trace: TRACE_CLASS {}, MSG_INDEX {}\n", r0, r2);
         }
-        uc.reg_write(Register::PC as i32, BASE_ADDR + 0x00119bcb).expect("failed to write pc inside dhl_trace");
+        uc.reg_write(RegisterARM::PC as i32, BASE_ADDR + 0x00119bcb).expect("failed to write pc inside dhl_trace");
     };
 
     let skip_internal_queue_loop = |mut uc: Unicorn, _addr: u64, _size: u32| {
-        uc.reg_write(Register::PC as i32, BASE_ADDR + 0x001ff106).expect("failed to write pc inside skip_internal_queue_loop");
+        uc.reg_write(RegisterARM::PC as i32, BASE_ADDR + 0x001ff106).expect("failed to write pc inside skip_internal_queue_loop");
     };
 
     macro_rules! hook {
         ($addr:expr, $func:expr) => {
-            emu.add_code_hook(HookType::CODE, $addr, $addr, $func).expect(&format!("failed to set {} hook", stringify!($func)));
+            emu.add_code_hook($addr, $addr, $func).expect(&format!("failed to set {} hook", stringify!($func)));
         };
         ($addr:expr, $func:expr, $opt_name:expr) => {
-            emu.add_code_hook(HookType::CODE, $addr, $addr, $func).expect(&format!("failed to set {} hook", $opt_name));
+            emu.add_code_hook($addr, $addr, $func).expect(&format!("failed to set {} hook", $opt_name));
         };
     }
 
@@ -463,8 +464,8 @@ fn main() {
         }
     };
 
-    let crash_validation_callback = | uc: Unicorn, result: unicornafl::ffi::uc_error, _input: &[u8], _:i32 | {
-        if result != unicornafl::ffi::uc_error::OK {
+    let crash_validation_callback = | uc: Unicorn, result: uc_error, _input: &[u8], _:i32 | {
+        if result != uc_error::OK {
             return true;
         }
         return false;
