@@ -5,9 +5,9 @@ authors = ["Dominik Maier <domenukk@gmail.com>", "Lukas Seidel"]
 edition = "2018"
 
 [dependencies]
-unicornafl = { path = "../../unicornafl_bindings/", version="0.9.0-afl" }
+unicornafl = { path = "../../AFLplusplus/unicorn_mode/unicornafl/bindings/rust", version="1.0.0" }
 capstone="0.6.0"
-libc="0.2.66" 
+libc="0.2.97" 
 
 [profile.release]
 panic = "abort"

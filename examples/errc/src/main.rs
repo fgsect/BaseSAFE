@@ -7,10 +7,9 @@ use std::io::Read;
 use std::env;
 use std::cell::RefCell;
 
-#[cfg(debug_assertions)] use capstone::prelude::*;
 use libc::{munmap, c_void};
 use unicornafl::{
-    unicorn_const::{uc_error, Permission, HookType, Arch},
+    unicorn_const::{Permission, Arch},
     RegisterARM,
     utils::*,
 };
@@ -25,7 +24,10 @@ fn read_file(filename: &str) -> Result<Vec<u8>, io::Error> {
 }
 
 
-// find null terminated string in vec
+/// find null terminated string in vec
+///
+/// # Safety
+/// Data at utff8_src needs to be valid utf8
 pub unsafe fn str_from_u8_nul_utf8_unchecked(utf8_src: &[u8]) -> &str {
     let nul_range_end = utf8_src.iter()
         .position(|&c| c == b'\0')
@@ -53,14 +55,14 @@ fn main() {
     } else if args.len() == 3 {
         mode = args[2].to_ascii_uppercase();
     }
-    let input_file = &args[1];
+    let arg = Box::new(args[1].to_owned());
+    let input_file = Box::leak(arg);
 
     const BASEBAND_PATH: &str = "../modem_raw.img";
     const BASE_ADDR: u64 = 0x0;
 
     let modem_image = 
-        read_file(BASEBAND_PATH)
-        .expect(&format!("Could not read modem image: {}", BASEBAND_PATH));
+        read_file(BASEBAND_PATH).unwrap_or_else(|_| panic!("Could not read modem image: {}", BASEBAND_PATH));
     let modem_len = modem_image.len() as u64;
     
     let aligned_size = align(modem_len);
@@ -80,9 +82,9 @@ fn main() {
     emu.mem_map(BASE_ADDR, aligned_size as usize, Permission::READ | Permission::EXEC).expect("failed to map EXEC pages");
     emu.mem_write(BASE_ADDR, &modem_image).expect("failed to write image");
     
-    emu.mem_map(0x70055400 as u64, 1024 as usize, Permission::READ | Permission::WRITE).expect("failed to map DAT_70055500");
-    emu.mem_map(0xF5F7F800 as u64, 2048 as usize, Permission::READ | Permission::WRITE).expect("failed to map main_function_tbl");
-    emu.mem_map(0xF731C800 as u64, 2048 as usize, Permission::READ | Permission::WRITE).expect("failed to map ASN_BLOCK_FREE_NUM");
+    emu.mem_map(0x70055400, 1024, Permission::READ | Permission::WRITE).expect("failed to map DAT_70055500");
+    emu.mem_map(0xF5F7F800, 2048, Permission::READ | Permission::WRITE).expect("failed to map main_function_tbl");
+    emu.mem_map(0xF731C800, 2048, Permission::READ | Permission::WRITE).expect("failed to map ASN_BLOCK_FREE_NUM");
     emu.mem_write(0xF731CDF4, b"\x01\x00\x00\x01").expect("failed to write ASN_BLOCK_FREE_NUM");
     
     /*
@@ -93,7 +95,7 @@ fn main() {
         #[cfg(debug_assertions)]
         println!("[*] msg_recv_*q\n");
         
-        let mut buf_len_raw: [u8; 2] = [0; 2 as usize];
+        let mut buf_len_raw = [0_u8; 2];
         uc.mem_read(0x0A000000, &mut buf_len_raw).expect("failed to read length of input buffer");
         let buf_len = u16::from_le_bytes(buf_len_raw) - 1;
         if buf_len < 4 || buf_len == 65535 {
@@ -106,28 +108,28 @@ fn main() {
             uc.mem_write(ilm_ptr + 2, b"\x01\x00").expect("failed to write dest_mod_id inside msg_recv_*q"); 
             uc.mem_write(ilm_ptr + 4, b"\x00\x00").expect("failed to write sap_id inside msg_recv_*q");
             
-            let mut msg_id = 255 as u16;
+            let mut msg_id = 255_u16;
             if mode == "explore" {
-                let mut msg_id_raw: [u8; 1] = [0; 1 as usize];
+                let mut msg_id_raw = [0_u8; 1];
                 uc.mem_read(0x0A000008, &mut msg_id_raw).expect("failed to read first input byte for msg_id");
                 msg_id = msg_id_raw[0] as u16 % 5;
             } 
 
-            let null_ptr: [u8; 4] = [0; 4 as usize];          
+            let null_ptr = [0_u8; 4];          
 
             if msg_id == 4 { // DL_DCCH with pdu in peer_buff
                 msg_id = 0x50ab;
 
-                let mut free_header_space: [u8; 1] = [0; 1 as usize];
-                let mut free_tail_space: [u8; 1] = [0; 1 as usize];
+                let mut free_header_space = [0_u8; 1];
+                let mut free_tail_space = [0_u8; 1];
                 uc.mem_read(0x0A000009, &mut free_header_space).expect("failed read free_header_space");
-                uc.mem_read(0x0A00000a, &mut free_tail_space).expect("failed read free_tail_space");
+                uc.mem_read(0x0A00000A, &mut free_tail_space).expect("failed read free_tail_space");
                 let pb_size = 8 + free_header_space[0] as u32 + buf_len as u32 - 2 + free_tail_space[0] as u32;
                 let peer_buff_ptr = uc_alloc(&mut uc, pb_size as u64).expect("failed to alloc");
                 uc.mem_write(peer_buff_ptr + 2, b"\x01").expect("failed to write peer_buff->ref_count");
 
                 let mut new_buf = vec![0; buf_len as usize - 2];
-                uc.mem_read(0x0A00000b, &mut new_buf).expect("failed to read mapped input buffer");
+                uc.mem_read(0x0A00000B, &mut new_buf).expect("failed to read mapped input buffer");
                 
                 uc.mem_write(peer_buff_ptr, &((buf_len as u16 - 2).to_le_bytes())).expect("failed to write peer_buff_buf->pdu_len");
                 uc.mem_write(peer_buff_ptr + 4, &((free_header_space[0] as u16).to_le_bytes())).expect("failed to write peer_buff_buf->free_header_space");
@@ -141,9 +143,9 @@ fn main() {
                 let pdu_ptr = uc_alloc(&mut uc, buf_len as u64).expect("failed to alloc");
                 let mut new_buf = vec![0; buf_len as _];
                 uc.mem_read(0x0A000009, &mut new_buf).expect("failed to read mapped input buffer");
-                uc.mem_write(pdu_ptr, &mut new_buf).expect("failed to write input buffer to allocated chunk");
+                uc.mem_write(pdu_ptr, &new_buf).expect("failed to write input buffer to allocated chunk");
 
-                let qbm_ptr = uc_alloc(&mut uc, 16 as u64).expect("failed to alloc");
+                let qbm_ptr = uc_alloc(&mut uc, 16_u64).expect("failed to alloc");
                 // prepare pointers to incoming buffer: char** at local_para + 8 + 8; length at local_para + 8 + 0xc
                 uc.mem_write(qbm_ptr + 8, &((pdu_ptr).to_le_bytes())).expect("failed to write char** ptr + 8");
                 uc.mem_write(qbm_ptr + 0xc, &((buf_len as u16).to_le_bytes())).expect("failed to write ushort* ptr + 12");
@@ -220,8 +222,8 @@ fn main() {
         #[cfg(debug_assertions)]
         println!("[*] memset: addr {:#x}, val {}, len {}\n", s_ptr, byte, n);
         
-        let mut buf = vec![byte; n as usize];
-        uc.mem_write(s_ptr, &mut buf).expect("failed to write inside memset");
+        let buf = vec![byte; n as usize];
+        uc.mem_write(s_ptr, &buf).expect("failed to write inside memset");
 
         let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
         uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside memset");
@@ -236,7 +238,7 @@ fn main() {
         
         let mut buf = vec![0; len as usize];
         uc.mem_read(src, &mut buf).expect("failed to read from src in memcpy");
-        uc.mem_write(dest, &mut buf).expect("failed to write to dest in memcpy");
+        uc.mem_write(dest, &buf).expect("failed to write to dest in memcpy");
 
         let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
         uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside memcpy");
@@ -251,7 +253,7 @@ fn main() {
             if ref_count[0] == 0 {
                 uc_free(&mut uc, struct_ptr as u64).expect("failed to free");           
             } else {
-                uc.mem_write(struct_ptr + 2, &mut ref_count).expect("failed to write ref_count back to pdu inside free_int_*_buff");
+                uc.mem_write(struct_ptr + 2, &ref_count).expect("failed to write ref_count back to pdu inside free_int_*_buff");
             }
         }
 
@@ -266,11 +268,11 @@ fn main() {
         {
             if addr == 0x003b7c92 {
                 let file_name_ptr = uc.reg_read(RegisterARM::R1 as i32).expect("failed to read r1");
-                let mut file_name_buf = vec![0; 64 as usize];
+                let mut file_name_buf = vec![0; 64];
                 uc.mem_read(file_name_ptr, &mut file_name_buf).expect("failed to read file_name in free_ctrl_buffer_ext");
                 let line = uc.reg_read(RegisterARM::R2 as i32).expect("failed to read r2");
                 unsafe { 
-                    let file_name = str_from_u8_nul_utf8_unchecked(&mut file_name_buf);
+                    let file_name = str_from_u8_nul_utf8_unchecked(&file_name_buf);
                     println!("[*] free_ctrl_buffer_ext: addr {}; {}:{}\n", buff_ptr, file_name, line);
                 }
             }
@@ -285,13 +287,13 @@ fn main() {
         let size = uc.reg_read(RegisterARM::R0 as i32).expect("failed to read r0");
         let file_name_ptr = uc.reg_read(RegisterARM::R1 as i32).expect("failed to read r1");
         
-        let mut file_name_buf = vec![0; 64 as usize];
+        let mut file_name_buf = vec![0; 64];
         uc.mem_read(file_name_ptr, &mut file_name_buf).expect("failed to read file_name in get_int_ctrl_buffer");
         #[cfg(debug_assertions)]
         {
             let line = uc.reg_read(RegisterARM::R2 as i32).expect("failed to read r2");
             unsafe { 
-                let file_name = str_from_u8_nul_utf8_unchecked(&mut file_name_buf);
+                let file_name = str_from_u8_nul_utf8_unchecked(&file_name_buf);
                 println!("[*] get_int_ctrl_buffer: size {}; {}:{}\n", size, file_name, line);
             }
         }
@@ -353,20 +355,20 @@ fn main() {
 
     let destroy_int_ilm = |mut uc: Unicorn, _addr: u64, _size: u32| {
         let ilm_ptr = uc.reg_read(RegisterARM::R0 as i32).expect("failed to read r0");
-        let mut local_para_ptr: [u8; 4] = [0; 4 as usize];
+        let mut local_para_ptr = [0_u8; 4];
         uc.mem_read(ilm_ptr + 8, &mut local_para_ptr).expect("failed to read local_para_ptr in destroy_int_ilm");
-        let mut peer_buff_ptr: [u8; 4] = [0; 4 as usize];
+        let mut peer_buff_ptr = [0_u8; 4];
         uc.mem_read(ilm_ptr + 12, &mut peer_buff_ptr).expect("failed to read peer_buff_ptr in destroy_int_ilm");
         
         let file_name_ptr = uc.reg_read(RegisterARM::R1 as i32).expect("failed to read r1");
-        let mut file_name_buf = vec![0; 64 as usize];
+        let mut file_name_buf = vec![0; 64];
         uc.mem_read(file_name_ptr, &mut file_name_buf).expect("failed to read file_name in destroy_int_ilm");
         
         #[cfg(debug_assertions)]
         {
             let line = uc.reg_read(RegisterARM::R2 as i32).expect("failed to read r2");
             unsafe { 
-                let file_name = str_from_u8_nul_utf8_unchecked(&mut file_name_buf);
+                let file_name = str_from_u8_nul_utf8_unchecked(&file_name_buf);
                 println!("[*] destroy_int_ilm: ptr {:#010x}; {}:{}\n", ilm_ptr, file_name, line);
             }   
         }
@@ -374,9 +376,9 @@ fn main() {
         uc_free(&mut uc, u32::from_le_bytes(local_para_ptr) as u64).expect("failed to free");
         uc_free(&mut uc, u32::from_le_bytes(peer_buff_ptr) as u64).expect("failed to free");
 
-        let mut null_ptr: [u8; 4] = [0; 4 as usize];
-        uc.mem_write(ilm_ptr + 8, &mut null_ptr).expect("failed to null local_para_ptr in destroy_int_ilm");
-        uc.mem_write(ilm_ptr + 12, &mut null_ptr).expect("failed to null peer_buff_ptr in destroy_int_ilm");
+        let null_ptr: [u8; 4] = [0; 4_usize];
+        uc.mem_write(ilm_ptr + 8, &null_ptr).expect("failed to null local_para_ptr in destroy_int_ilm");
+        uc.mem_write(ilm_ptr + 12, &null_ptr).expect("failed to null peer_buff_ptr in destroy_int_ilm");
         
         let lr = uc.reg_read(RegisterARM::LR as i32).expect("failed to read LR");
         uc.reg_write(RegisterARM::PC as i32, lr).expect("failed to write pc inside destroy_int_ilm");
@@ -454,7 +456,7 @@ fn main() {
         println!("heap: {:#010x?}", emu.get_data());
     }
     
-    let place_input_callback = |mut uc: Unicorn, afl_input :&[u8], _:i32| {
+    let place_input_callback = |mut uc: Unicorn, afl_input :&mut [u8], _:i32| {
         if afl_input.len() > 4096 {
             false
         } else {
@@ -464,11 +466,8 @@ fn main() {
         }
     };
 
-    let crash_validation_callback = | uc: Unicorn, result: uc_error, _input: &[u8], _:i32 | {
-        if result != uc_error::OK {
-            return true;
-        }
-        return false;
+    let crash_validation_callback = move | _uc: Unicorn, result: unicornafl::unicorn_const::uc_error, _input: &[u8], _:i32 | {
+        result != unicornafl::unicorn_const::uc_error::OK
     };
 
     // fuzz ASN.1 decoders in ERRC handler
@@ -484,7 +483,7 @@ fn main() {
 
     match ret {
         Ok(_) => {}
-        Err(e) => panic!(format!("found non-ok unicorn exit: {:?}", e))
+        Err(e) => panic!("found non-ok unicorn exit: {:?}", e)
     }
     
     let real_base = emu.get_data().borrow().real_base;
