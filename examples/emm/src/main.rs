@@ -1,5 +1,4 @@
 extern crate capstone;
-extern crate libc;
 
 use std::cell::RefCell;
 use std::env;
@@ -7,7 +6,6 @@ use std::fs::File;
 use std::io;
 use std::io::Read;
 
-use libc::{c_void, munmap};
 use unicornafl::unicorn_const::{uc_error, Arch, Permission};
 use unicornafl::utils::*;
 use unicornafl::RegisterARM;
@@ -581,11 +579,5 @@ fn main() {
     match ret {
         Ok(_) => {}
         Err(e) => panic!("found non-ok unicorn exit: {:?}", e),
-    }
-
-    let real_base = emu.get_data().borrow().real_base;
-    let len = emu.get_data().borrow().len;
-    unsafe {
-        munmap(real_base as *mut c_void, len);
     }
 }
