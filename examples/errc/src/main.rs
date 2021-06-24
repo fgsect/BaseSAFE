@@ -373,14 +373,14 @@ fn main() {
             .expect("failed to write pc inside free_int_*_buff");
     };
 
-    let free_ctrl_buffer_ext = |mut uc: Unicorn, addr: u64, _size: u32| {
+    let free_ctrl_buffer_ext = |mut uc: Unicorn, _addr: u64, _size: u32| {
         let buff_ptr = uc
             .reg_read(RegisterARM::R0 as i32)
             .expect("failed to read r0");
 
         #[cfg(debug_assertions)]
         {
-            if addr == 0x003b7c92 {
+            if _addr == 0x003b7c92 {
                 let file_name_ptr = uc
                     .reg_read(RegisterARM::R1 as i32)
                     .expect("failed to read r1");
@@ -664,9 +664,9 @@ fn main() {
         .expect("failed to kick off emulation"); // start at offset 1 to run in thumb mode
     let ret = emu.afl_fuzz(
         input_file,
-        Box::new(place_input_callback),
+        place_input_callback,
         &[0x001ff106, 0x001ff0aa],
-        Box::new(crash_validation_callback),
+        crash_validation_callback,
         false,
         1,
     );

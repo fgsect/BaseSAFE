@@ -571,9 +571,9 @@ fn main() {
         .expect("failed to kick off"); // start at offset 1 to run in thumb mode
     let ret = emu.afl_fuzz(
         input_file,
-        Box::new(place_input_callback),
+        place_input_callback,
         &[0x001e6c82],
-        Box::new(crash_validation_callback),
+        crash_validation_callback,
         false,
         1,
     );
