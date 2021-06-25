@@ -661,7 +661,7 @@ fn main() {
               _: i32| { result != unicornafl::unicorn_const::uc_error::OK };
 
     // fuzz ASN.1 decoders in ERRC handler
-    set_pc(&mut emu, 0x1fe741).unwrap();
+    set_pc(&mut emu, 0x1fe740 | 1).unwrap();
     let ret = emu.afl_fuzz(
         input_file,
         place_input_callback,
