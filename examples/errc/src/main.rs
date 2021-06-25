@@ -7,6 +7,7 @@ use std::fs::File;
 use std::io;
 use std::io::Read;
 
+use unicornafl::unicorn_const::Mode;
 use unicornafl::{
     unicorn_const::{Arch, Permission},
     utils::*,
@@ -64,7 +65,7 @@ fn main() {
 
     let aligned_size = align(modem_len);
 
-    let mut unicorn = init_emu_with_heap(Arch::ARM, 1048576 * 20, 0x90000000, false)
+    let mut unicorn = init_emu_with_heap(Arch::ARM, Mode::THUMB, 1048576 * 20, 0x90000000, false)
         .expect("failed to create emulator instance");
     let mut emu = unicorn.borrow();
 
@@ -641,7 +642,7 @@ fn main() {
         println!("heap: {:#010x?}", emu.get_data());
     }
 
-    let place_input_callback = |mut uc: Unicorn, afl_input: &mut [u8], _: i32| {
+    let place_input_callback = |uc: &mut Unicorn, afl_input: &mut [u8], _: i32| {
         if afl_input.len() > 4096 {
             false
         } else {
@@ -654,13 +655,13 @@ fn main() {
     };
 
     let crash_validation_callback =
-        move |_uc: Unicorn, result: unicornafl::unicorn_const::uc_error, _input: &[u8], _: i32| {
-            result != unicornafl::unicorn_const::uc_error::OK
-        };
+        move |_uc: &mut Unicorn,
+              result: unicornafl::unicorn_const::uc_error,
+              _input: &[u8],
+              _: i32| { result != unicornafl::unicorn_const::uc_error::OK };
 
     // fuzz ASN.1 decoders in ERRC handler
-    emu.emu_start(0x1fe741, 0x001ff106, 0, 1)
-        .expect("failed to kick off emulation"); // start at offset 1 to run in thumb mode
+    set_pc(&mut emu, 0x1fe741).unwrap();
     let ret = emu.afl_fuzz(
         input_file,
         place_input_callback,

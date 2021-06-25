@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io;
 use std::io::Read;
 
+use unicornafl::unicorn_const::Mode;
 use unicornafl::unicorn_const::{uc_error, Arch, Permission};
 use unicornafl::utils::*;
 use unicornafl::RegisterARM;
@@ -57,7 +58,7 @@ fn main() {
 
     let aligned_size = align(modem_len);
 
-    let mut unicorn = init_emu_with_heap(Arch::ARM, 1048576 * 20, 0x90000000, false)
+    let mut unicorn = init_emu_with_heap(Arch::ARM, Mode::THUMB, 1048576 * 20, 0x90000000, false)
         .expect("failed to create emulator instance");
     let mut emu = unicorn.borrow();
 
@@ -553,7 +554,7 @@ fn main() {
     hook!(0x001e6a30, init);
     hook!(0x00489dfc, mcd_unpack);
 
-    let place_input_callback = |mut uc: Unicorn, afl_input: &mut [u8], _: i32| {
+    let place_input_callback = |mut uc: &mut Unicorn, afl_input: &mut [u8], _: i32| {
         uc.mem_write(0x0A000000, &(afl_input.len() as u32).to_le_bytes())
             .expect("failed to write input_size");
         uc.mem_write(0x0A000000 + 8, &afl_input)
@@ -562,11 +563,9 @@ fn main() {
     };
 
     let crash_validation_callback =
-        |_uc: Unicorn, result: uc_error, _input: &[u8], _: i32| result != uc_error::OK;
+        |_uc: &mut Unicorn, result: uc_error, _input: &[u8], _: i32| result != uc_error::OK;
 
-    // fuzz decoder for ATTACH ACCEPT messages
-    emu.emu_start(0x001e6a31, 0x001e6c82, 0, 1)
-        .expect("failed to kick off"); // start at offset 1 to run in thumb mode
+    set_pc(&mut emu, 0x001e6a31).unwrap();
     let ret = emu.afl_fuzz(
         input_file,
         place_input_callback,
