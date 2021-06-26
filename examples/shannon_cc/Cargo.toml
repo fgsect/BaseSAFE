@@ -1,0 +1,14 @@
+[package]
+name = "shannon_fuzz"
+version = "0.1.0"
+authors = ["Dominik Maier <domenukk@gmail.com>", "Lukas Seidel"]
+edition = "2018"
+
+[dependencies]
+unicornafl = { path = "../../AFLplusplus/unicorn_mode/unicornafl/bindings/rust", version="1.0.0" }
+capstone = "0.6.0"
+libc = "0.2.97" 
+flate2 = "1.0"
+
+[profile.release]
+panic = "abort"

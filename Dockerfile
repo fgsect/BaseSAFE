@@ -19,7 +19,7 @@ RUN sh -c 'echo set encoding=utf-8 > /root/.vimrc' \
 RUN rustup component add rustfmt clippy
 
 # Install clang 11, common build tools
-RUN apt update && apt install -y build-essential gdb git wget clang clang-tools libc++-11-dev libc++abi-11-dev
+RUN apt update && apt install -y build-essential gdb git wget clang clang-tools libc++-11-dev libc++abi-11-dev python3-setuptools
 
 # Copy a dummy.rs and Cargo.toml first, so that dependencies are cached
 RUN mkdir /BaseSAFE
@@ -31,6 +31,7 @@ RUN git clone https://github.com/AFLplusplus/AFLplusplus.git && \
     make install && \
     cd ..
 
-COPY paper.png README.md examples ./
+COPY paper.png README.md ./
+COPY examples examples
 
 ENTRYPOINT [ "/bin/bash" ]

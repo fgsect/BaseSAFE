@@ -554,7 +554,7 @@ fn main() {
     hook!(0x001e6a30, init);
     hook!(0x00489dfc, mcd_unpack);
 
-    let place_input_callback = |mut uc: &mut Unicorn, afl_input: &mut [u8], _: i32| {
+    let place_input_callback = |uc: &mut Unicorn, afl_input: &mut [u8], _: i32| {
         uc.mem_write(0x0A000000, &(afl_input.len() as u32).to_le_bytes())
             .expect("failed to write input_size");
         uc.mem_write(0x0A000000 + 8, &afl_input)
